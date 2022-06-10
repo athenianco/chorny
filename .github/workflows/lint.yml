@@ -1,0 +1,59 @@
+name: Push
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+
+env:
+  PIP_CACHE: |
+    ~/.cache/pip
+    ~/.local/bin
+    ~/.local/lib/python3.*/site-packages
+
+
+jobs:
+  check:
+    name: self-format
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v3
+    - name: actions/cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.PIP_CACHE }}
+        key: ubuntu-20.04-pip-lint-${{ hashFiles('requirements-lint.txt') }}
+        restore-keys: ubuntu-20.04-pip-lint-
+    - name: pip -r requirements-lint.txt
+      run: |
+        set -x
+        pip3 install -r requirements-lint.txt --no-warn-script-location
+        pip3 install -e .
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+    - name: chorny
+      run: |
+        set -x
+        add-trailing-comma *.py
+        chorny *.py
+        git diff --exit-code
+  lint:
+    name: lint
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v3
+    - name: actions/cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.PIP_CACHE }}
+        key: ubuntu-20.04-pip-lint-${{ hashFiles('requirements-lint.txt') }}
+        restore-keys: ubuntu-20.04-pip-lint-
+    - name: pip -r requirements-lint.txt
+      run: |
+        set -x
+        pip3 install -r requirements-lint.txt --no-warn-script-location
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+    - name: flake8
+      run: flake8
