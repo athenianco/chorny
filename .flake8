@@ -1,0 +1,5 @@
+[flake8]
+ignore=SFS101,SFS301,D,W503,W504
+max-line-length=99
+inline-quotes="
+import-order-style=appnexus
