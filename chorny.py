@@ -18,49 +18,67 @@ def _no_mypyc_for_black(cls, fullname, path):
 
 def patch_black():
     ExtensionFileLoader.__new__ = _no_mypyc_for_black  # there is no way back
-    from black import Line, linegen, lines, patched_main
+    from black import Line, linegen, lines, patched_main, syms, token
     from black.nodes import is_one_sequence_between
-    from blib2to3.pgen2 import token
     from blib2to3.pytree import Leaf
 
     def bracket_clone(self) -> Line:
+        if (
+            not self.magic_trailing_comma
+            or (not self.is_def and not self.is_decorator)
+            or self.leaves[-1] != self.magic_trailing_comma
+        ):
+            magic_trailing_comma = None
+        else:
+            haystack = "".join(str(leaf) for leaf in self.leaves)
+            needle = "".join(str(leaf) for leaf in self.magic_trailing_comma.parent.leaves())
+            if needle in haystack:
+                magic_trailing_comma = self.magic_trailing_comma
+            else:
+                magic_trailing_comma = None
         return Line(
             mode=self.mode,
             depth=self.depth,
-            magic_trailing_comma=self.magic_trailing_comma,
+            magic_trailing_comma=magic_trailing_comma,
         )
 
     def has_magic_trailing_comma_patch(self, closing: Leaf) -> bool:
-        if Leaf(token.NAME, "def") in self.leaves[:2] and not is_one_sequence_between(
-            closing.opening_bracket, closing, self.leaves,
+        if (
+            (self.is_def or self.is_decorator)
+            and closing.opening_bracket is not None
+            and not is_one_sequence_between(
+                closing.opening_bracket,
+                closing,
+                self.leaves,
+            )
         ):
             return True
 
-        return False
+        if closing.opening_bracket is None:
+            return False
+
+        # if already multiline, set multiline
+        parent = self.leaves[-1].parent
+        if parent.type not in (syms.arglist, syms.typedargslist):
+            return False
+        line = 0
+        distinct_lines = 0
+        for child in parent.children:
+            if child.type == token.COMMA:
+                if child.lineno != line:
+                    line = child.lineno
+                    distinct_lines += 1
+        if distinct_lines <= 1:
+            if line == closing.lineno:
+                self.remove_trailing_comma()
+            return False
+
+        return True
 
     nop = dis.opmap["NOP"]
 
     Line.bracket_clone = bracket_clone
     Line.has_magic_trailing_comma_patch = has_magic_trailing_comma_patch
-
-    func = linegen.should_split_line
-    code = func.__code__
-    ops = bytearray(code.co_code)
-    pattern = bytes(
-        [
-            dis.opmap["LOAD_FAST"],
-            code.co_varnames.index("line"),
-            dis.opmap["LOAD_ATTR"],
-            code.co_names.index("mode"),
-            dis.opmap["LOAD_ATTR"],
-            code.co_names.index("magic_trailing_comma"),
-        ],
-    )
-    pos = ops.find(pattern)
-    assert pos >= 0, "patch failed for should_split_line"
-    # skip "mode"
-    ops[pos + 2] = ops[pos + 3] = nop
-    _patch_function(func, bytes(ops), code.co_names)
 
     func = linegen.bracket_split_build_line
     code = func.__code__
@@ -68,9 +86,7 @@ def patch_black():
     assert ops[:2] == bytes(
         [dis.opmap["LOAD_GLOBAL"], code.co_names.index("Line")],
     ), "patch failed for bracket_split_build_line"
-    ops[
-        :6
-    ] = [
+    ops[:6] = [
         dis.opmap["LOAD_FAST"],
         code.co_varnames.index("original"),
         dis.opmap["LOAD_METHOD"],
@@ -109,9 +125,7 @@ def patch_black():
     ]
     ops[pos : pos + len(patch)] = patch  # noqa: E203
     ops = ops[: pos + len(patch)]
-    _patch_function(
-        func, bytes(ops), code.co_names + ("has_magic_trailing_comma_patch",),
-    )
+    _patch_function(func, bytes(ops), code.co_names + ("has_magic_trailing_comma_patch",))
 
     return patched_main
 
