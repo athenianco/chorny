@@ -14,7 +14,7 @@ setup(
     description="Loader of Black to ensure Athenian's code formatting conventions.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    version="1.0.0",
+    version="1.1.0",
     license="MIT",
     author="Athenian",
     author_email="vadim@athenian.co",
