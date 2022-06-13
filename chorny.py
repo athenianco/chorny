@@ -18,39 +18,24 @@ def _no_mypyc_for_black(cls, fullname, path):
 
 def patch_black():
     ExtensionFileLoader.__new__ = _no_mypyc_for_black  # there is no way back
-    from black import Line, linegen, lines, patched_main, syms, token
+    import black
+    from black import _format_str_once, format_file_contents, Line, patched_main, syms, token
     from black.nodes import is_one_sequence_between
     from blib2to3.pytree import Leaf
 
-    def bracket_clone(self) -> Line:
-        if (
-            not self.magic_trailing_comma
-            or (not self.is_def and not self.is_decorator)
-            or self.leaves[-1] != self.magic_trailing_comma
-        ):
-            magic_trailing_comma = None
-        else:
-            haystack = "".join(str(leaf) for leaf in self.leaves)
-            needle = "".join(str(leaf) for leaf in self.magic_trailing_comma.parent.leaves())
-            if needle in haystack:
-                magic_trailing_comma = self.magic_trailing_comma
-            else:
-                magic_trailing_comma = None
-        return Line(
-            mode=self.mode,
-            depth=self.depth,
-            magic_trailing_comma=magic_trailing_comma,
-        )
+    def format_file_contents_patch(src_contents, *, fast, mode):
+        try:
+            return format_file_contents(src_contents, fast=fast, mode=mode)
+        except AssertionError:
+            return format_file_contents(
+                _format_str_once(src_contents, mode=mode), fast=fast, mode=mode,
+            )
 
     def has_magic_trailing_comma_patch(self, closing: Leaf) -> bool:
         if (
             (self.is_def or self.is_decorator)
             and closing.opening_bracket is not None
-            and not is_one_sequence_between(
-                closing.opening_bracket,
-                closing,
-                self.leaves,
-            )
+            and not is_one_sequence_between(closing.opening_bracket, closing, self.leaves)
         ):
             return True
 
@@ -71,33 +56,16 @@ def patch_black():
         if distinct_lines <= 1:
             if line == closing.lineno:
                 self.remove_trailing_comma()
+            if self.leaves[-1].type == token.COMMA:
+                self.leaves[-1] = Leaf(token.NAME, ",")
             return False
 
         return True
 
-    nop = dis.opmap["NOP"]
-
-    Line.bracket_clone = bracket_clone
+    black.format_file_contents = format_file_contents_patch
     Line.has_magic_trailing_comma_patch = has_magic_trailing_comma_patch
 
-    func = linegen.bracket_split_build_line
-    code = func.__code__
-    ops = bytearray(code.co_code)
-    assert ops[:2] == bytes(
-        [dis.opmap["LOAD_GLOBAL"], code.co_names.index("Line")],
-    ), "patch failed for bracket_split_build_line"
-    ops[:6] = [
-        dis.opmap["LOAD_FAST"],
-        code.co_varnames.index("original"),
-        dis.opmap["LOAD_METHOD"],
-        len(code.co_names),
-        dis.opmap["CALL_METHOD"],
-        0,
-    ]
-    ops[6:14] = [nop] * (14 - 6)
-    _patch_function(func, bytes(ops), code.co_names + ("bracket_clone",))
-
-    func = lines.Line.has_magic_trailing_comma
+    func = Line.has_magic_trailing_comma
     code = func.__code__
     ops = bytearray(code.co_code)
     pattern = bytes(
