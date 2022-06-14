@@ -19,9 +19,32 @@ def _no_mypyc_for_black(cls, fullname, path):
 def patch_black():
     ExtensionFileLoader.__new__ = _no_mypyc_for_black  # there is no way back
     import black
-    from black import _format_str_once, format_file_contents, Line, patched_main, syms, token
+    from black import (
+        _format_str_once,
+        format_file_contents,
+        Line,
+        patched_main,
+        syms,
+        token,
+        transform_line,
+    )
     from black.nodes import is_one_sequence_between
     from blib2to3.pytree import Leaf
+
+    def transform_line_patch(line, mode, features=()):
+        for transformed_line in transform_line(line, mode, features=features):
+            removed = []
+            leaves = transformed_line.leaves
+            last_index = len(leaves) - 1
+            for i, leaf in enumerate(leaves):
+                if leaf.type == token.NAME and leaf.value == ",":
+                    if (i > 0 and leaves[i - 1].type == token.COMMA) or (
+                        i < last_index and leaves[i + 1].type == token.COMMA
+                    ):
+                        removed.append(i)
+            for i in removed[::-1]:
+                del leaves[i]
+            yield transformed_line
 
     def format_file_contents_patch(src_contents, *, fast, mode):
         try:
@@ -63,6 +86,8 @@ def patch_black():
         return True
 
     black.format_file_contents = format_file_contents_patch
+    black.transform_line = transform_line_patch
+    black.linegen.transform_line = transform_line_patch
     Line.has_magic_trailing_comma_patch = has_magic_trailing_comma_patch
 
     func = Line.has_magic_trailing_comma
