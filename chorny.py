@@ -57,7 +57,7 @@ def patch_black():
             if line == closing.lineno:
                 self.remove_trailing_comma()
             if self.leaves[-1].type == token.COMMA:
-                self.leaves[-1] = Leaf(token.NAME, ",")
+                self.leaves[-1].type = token.NAME
             return False
 
         return True
