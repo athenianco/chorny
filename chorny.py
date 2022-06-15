@@ -78,10 +78,14 @@ def patch_black():
                     distinct_lines += 1
         if distinct_lines <= 1:
             first_leaf = next(iter((parent.leaves())))
+            comma_leaf = self.leaves[-1]
+            assert comma_leaf.type == token.COMMA
+            if first_leaf.lineno < line or comma_leaf.column in (0, self.mode.line_length):
+                return False
             if line == closing.lineno:
                 self.remove_trailing_comma()
-            if self.leaves[-1].type == token.COMMA and first_leaf.lineno == line:
-                self.leaves[-1].type = token.ERRORTOKEN
+            else:  # first_leaf.lineno == line
+                comma_leaf.type = token.ERRORTOKEN
             return False
 
         return True
