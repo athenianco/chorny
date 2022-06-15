@@ -18,7 +18,7 @@ setup(
     license="MIT",
     author="Athenian",
     author_email="vadim@athenian.co",
-    url="https://github.com/athenian/chorny",
+    url="https://github.com/athenianco/chorny",
     py_modules=["chorny"],
     keywords=["black"],
     install_requires=["black"],
