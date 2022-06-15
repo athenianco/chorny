@@ -37,7 +37,7 @@ def patch_black():
             leaves = transformed_line.leaves
             last_index = len(leaves) - 1
             for i, leaf in enumerate(leaves):
-                if leaf.type == token.NAME and leaf.value == ",":
+                if leaf.type == token.ERRORTOKEN and leaf.value == ",":
                     if (i > 0 and leaves[i - 1].type == token.COMMA) or (
                         i < last_index and leaves[i + 1].type == token.COMMA
                     ):
@@ -77,10 +77,11 @@ def patch_black():
                     line = child.lineno
                     distinct_lines += 1
         if distinct_lines <= 1:
+            first_leaf = next(iter((parent.leaves())))
             if line == closing.lineno:
                 self.remove_trailing_comma()
-            if self.leaves[-1].type == token.COMMA:
-                self.leaves[-1].type = token.NAME
+            if self.leaves[-1].type == token.COMMA and first_leaf.lineno == line:
+                self.leaves[-1].type = token.ERRORTOKEN
             return False
 
         return True
