@@ -1,6 +1,7 @@
 import dis
 from importlib.machinery import ExtensionFileLoader, SourceFileLoader
 from pathlib import Path
+import sys
 
 
 def _patch_function(func, new_code, new_names):
@@ -98,29 +99,59 @@ def patch_black():
     func = Line.has_magic_trailing_comma
     code = func.__code__
     ops = bytearray(code.co_code)
-    pattern = bytes(
-        [
+
+    if sys.version_info >= (3, 11):
+        pattern = [
+            dis.opmap["LOAD_FAST"],
+            code.co_varnames.index("self"),
+            dis.opmap["LOAD_ATTR"],
+            code.co_names.index("is_import"),
+            *([0] * 8),
+            dis.opmap["POP_JUMP_FORWARD_IF_FALSE"],
+        ]
+    else:
+        pattern = [
             dis.opmap["LOAD_FAST"],
             code.co_varnames.index("self"),
             dis.opmap["LOAD_ATTR"],
             code.co_names.index("is_import"),
             dis.opmap["POP_JUMP_IF_FALSE"],
-        ],
-    )
-    pos = ops.find(pattern)
+        ]
+
+    pos = ops.find(bytes(pattern))
     assert pos >= 0, "patch failed for has_magic_trailing_comma"
     pos += len(pattern) + 5
-    patch = [
-        dis.opmap["LOAD_FAST"],
-        code.co_varnames.index("self"),
-        dis.opmap["LOAD_METHOD"],
-        len(code.co_names),
-        dis.opmap["LOAD_FAST"],
-        code.co_varnames.index("closing"),
-        dis.opmap["CALL_METHOD"],
-        1,
-        dis.opmap["RETURN_VALUE"],
-    ]
+
+    if sys.version_info >= (3, 11):
+        patch = [
+            dis.opmap["LOAD_FAST"],
+            code.co_varnames.index("self"),
+            dis.opmap["LOAD_METHOD"],
+            len(code.co_names),
+            *([0] * 20),
+            dis.opmap["LOAD_FAST"],
+            code.co_varnames.index("closing"),
+            dis.opmap["PRECALL"],
+            1,
+            *([0] * 2),
+            dis.opmap["CALL"],
+            1,
+            *([0] * 8),
+            dis.opmap["RETURN_VALUE"],
+            0,
+        ]
+    else:
+        patch = [
+            dis.opmap["LOAD_FAST"],
+            code.co_varnames.index("self"),
+            dis.opmap["LOAD_METHOD"],
+            len(code.co_names),
+            dis.opmap["LOAD_FAST"],
+            code.co_varnames.index("closing"),
+            dis.opmap["CALL_METHOD"],
+            1,
+            dis.opmap["RETURN_VALUE"],
+        ]
     ops[pos : pos + len(patch)] = patch  # noqa: E203
     ops = ops[: pos + len(patch)]
     _patch_function(func, bytes(ops), code.co_names + ("has_magic_trailing_comma_patch",))
